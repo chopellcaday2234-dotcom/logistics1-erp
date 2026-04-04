@@ -1,0 +1,48 @@
+{
+  "name": "logistics1-backend",
+  "version": "1.0.0",
+  "description": "Logistics 1 ERP System — Hotel & Restaurant Backend",
+  "main": "src/server.js",
+  "scripts": {
+    "dev": "nodemon src/server.js",
+    "start": "node src/server.js",
+    "db:migrate": "npx prisma migrate dev --name init",
+    "db:push": "npx prisma db push",
+    "db:seed": "node prisma/seed.js",
+    "db:studio": "npx prisma studio",
+    "db:generate": "npx prisma generate",
+    "db:reset":       "npx prisma migrate reset --force && node prisma/seed.js",
+    "test":           "jest --runInBand --forceExit --testTimeout=30000",
+    "test:unit":      "jest --runInBand --forceExit --testPathPattern='__tests__/[^/]+\\.test\\.js$'",
+    "test:e2e":       "jest --runInBand --forceExit --testTimeout=30000 --testPathPattern='integration'",
+    "test:watch":     "jest --watch --testPathPattern='__tests__/[^/]'",
+    "test:coverage":  "jest --runInBand --forceExit --coverage --testTimeout=30000"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.10.0",
+    "bcryptjs": "^2.4.3",
+    "compression": "^1.7.4",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.4",
+    "express": "^4.18.3",
+    "express-rate-limit": "^7.2.0",
+    "helmet": "^7.1.0",
+    "joi": "^17.12.2",
+    "jsonwebtoken": "^9.0.2",
+    "morgan": "^1.10.0",
+    "multer": "^1.4.5-lts.1",
+    "nodemailer": "^6.9.9",
+    "uuid": "^9.0.1",
+    "winston": "^3.12.0"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "nodemon": "^3.1.0",
+    "prisma": "^5.10.0",
+    "supertest": "^6.3.4"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "testMatch": ["**/__tests__/**/*.test.js"]
+  }
+}

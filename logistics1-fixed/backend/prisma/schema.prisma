@@ -1,0 +1,867 @@
+// ─────────────────────────────────────────────────────────
+//  LOGISTICS 1 ERP — Prisma Schema (MySQL)
+//  Full schema for all modules: Auth, Procurement, Inventory,
+//  Assets, MRO, Projects, Notifications, Audit
+// ─────────────────────────────────────────────────────────
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────────────────
+// ENUMS
+// ─────────────────────────────────────────────────────────
+
+enum Role {
+  ADMIN
+  MANAGER
+  STAFF
+  TECHNICIAN
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+}
+
+enum SupplierStatus {
+  ACTIVE
+  INACTIVE
+  BLACKLISTED
+}
+
+enum RFQStatus {
+  DRAFT
+  SENT
+  QUOTED
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+enum POStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  SENT
+  PARTIALLY_RECEIVED
+  RECEIVED
+  CANCELLED
+  CLOSED
+}
+
+enum POReceivingStatus {
+  PENDING
+  PARTIAL
+  COMPLETE
+}
+
+enum InventoryCategory {
+  FOOD_BEVERAGE
+  HOUSEKEEPING
+  MAINTENANCE
+  OFFICE_SUPPLIES
+  EQUIPMENT
+  SPARE_PARTS
+  CLEANING
+  LINEN
+  AMENITIES
+  OTHER
+}
+
+enum StockMovementType {
+  IN
+  OUT
+  ADJUSTMENT
+  TRANSFER
+}
+
+enum StockMovementSource {
+  PURCHASE_ORDER
+  MRO_WORK_ORDER
+  PROJECT
+  MANUAL_ADJUSTMENT
+  RETURN
+  DISPOSAL
+  TRANSFER
+}
+
+enum BatchStatus {
+  ACTIVE
+  DEPLETED
+  EXPIRED
+  QUARANTINED
+}
+
+enum AssetStatus {
+  ACTIVE
+  UNDER_MAINTENANCE
+  RETIRED
+  DISPOSED
+  LOST
+}
+
+enum AssetCondition {
+  EXCELLENT
+  GOOD
+  FAIR
+  POOR
+  CRITICAL
+}
+
+enum WorkOrderType {
+  PREVENTIVE
+  CORRECTIVE
+  EMERGENCY
+  INSPECTION
+}
+
+enum WorkOrderStatus {
+  DRAFT
+  OPEN
+  IN_PROGRESS
+  ON_HOLD
+  COMPLETED
+  CANCELLED
+}
+
+enum WorkOrderPriority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum ProjectStatus {
+  PLANNING
+  ACTIVE
+  ON_HOLD
+  COMPLETED
+  CANCELLED
+}
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  REVIEW
+  DONE
+  CANCELLED
+}
+
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum RiskLevel {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum NotificationType {
+  INFO
+  WARNING
+  ALERT
+  SUCCESS
+  ERROR
+}
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  APPROVE
+  REJECT
+  LOGIN
+  LOGOUT
+  EXPORT
+  IMPORT
+  WORKFLOW_CHANGE
+}
+
+// ─────────────────────────────────────────────────────────
+// AUTH & USER MANAGEMENT
+// ─────────────────────────────────────────────────────────
+
+model User {
+  id            String     @id @default(uuid())
+  email         String     @unique
+  password      String
+  firstName     String
+  lastName      String
+  role          Role       @default(STAFF)
+  status        UserStatus @default(ACTIVE)
+  department    String?
+  phone         String?
+  avatarUrl     String?
+  lastLoginAt   DateTime?
+  refreshToken        String?    @db.Text
+  passwordResetToken  String?    @db.Text
+  passwordResetExpiry DateTime?
+  createdAt           DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  // Relations
+  auditLogs          AuditLog[]
+  notifications      Notification[]
+  createdPOs         PurchaseOrder[]         @relation("POCreatedBy")
+  approvedPOs        PurchaseOrder[]         @relation("POApprovedBy")
+  createdRFQs        RFQ[]                   @relation("RFQCreatedBy")
+  approvedRFQs       RFQ[]                   @relation("RFQApprovedBy")
+  createdWorkOrders  WorkOrder[]             @relation("WOCreatedBy")
+  assignedWorkOrders WorkOrder[]             @relation("WOAssignedTo")
+  createdProjects    Project[]               @relation("ProjectCreatedBy")
+  stockAdjustments   StockMovement[]
+
+  @@index([email])
+  @@index([role])
+  @@map("users")
+}
+
+// ─────────────────────────────────────────────────────────
+// PROCUREMENT MODULE
+// ─────────────────────────────────────────────────────────
+
+model Supplier {
+  id            String         @id @default(uuid())
+  code          String         @unique
+  name          String
+  contactPerson String?
+  email         String?
+  phone         String?
+  address       String?        @db.Text
+  city          String?
+  country       String         @default("Philippines")
+  taxId         String?
+  paymentTerms  String?
+  leadTimeDays  Int            @default(7)
+  rating        Float          @default(0)
+  status        SupplierStatus @default(ACTIVE)
+  notes         String?        @db.Text
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  // Relations
+  rfqs          RFQ[]
+  rfqQuotes     RFQQuote[]
+  purchaseOrders PurchaseOrder[]
+
+  @@index([code])
+  @@index([status])
+  @@map("suppliers")
+}
+
+model RFQ {
+  id            String    @id @default(uuid())
+  rfqNumber     String    @unique
+  title         String
+  description   String?   @db.Text
+  status        RFQStatus @default(DRAFT)
+  dueDate       DateTime
+  projectId     String?
+  attachmentUrl String?
+  notes         String?   @db.Text
+  createdById   String
+  approvedById  String?
+  approvedAt    DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Relations
+  createdBy    User          @relation("RFQCreatedBy", fields: [createdById], references: [id])
+  approvedBy   User?         @relation("RFQApprovedBy", fields: [approvedById], references: [id])
+  project      Project?      @relation(fields: [projectId], references: [id])
+  suppliers    RFQSupplier[]
+  items        RFQItem[]
+  quotes       RFQQuote[]
+  purchaseOrders PurchaseOrder[]
+
+  @@index([rfqNumber])
+  @@index([status])
+  @@map("rfqs")
+}
+
+model RFQSupplier {
+  id         String   @id @default(uuid())
+  rfqId      String
+  supplierId String
+  sentAt     DateTime?
+  createdAt  DateTime @default(now())
+
+  rfq      RFQ      @relation(fields: [rfqId], references: [id], onDelete: Cascade)
+  supplier Supplier @relation(fields: [supplierId], references: [id])
+
+  @@unique([rfqId, supplierId])
+  @@map("rfq_suppliers")
+}
+
+model RFQItem {
+  id              String  @id @default(uuid())
+  rfqId           String
+  inventoryItemId String?
+  description     String
+  quantity        Float
+  unit            String
+  specifications  String? @db.Text
+
+  rfq           RFQ            @relation(fields: [rfqId], references: [id], onDelete: Cascade)
+  inventoryItem InventoryItem? @relation(fields: [inventoryItemId], references: [id])
+  quoteItems    RFQQuoteItem[]
+
+  @@index([rfqId])
+  @@map("rfq_items")
+}
+
+model RFQQuote {
+  id            String    @id @default(uuid())
+  rfqId         String
+  supplierId    String
+  quoteNumber   String?
+  totalAmount   Float
+  currency      String    @default("PHP")
+  validUntil    DateTime?
+  deliveryDays  Int?
+  paymentTerms  String?
+  notes         String?   @db.Text
+  attachmentUrl String?
+  isSelected    Boolean   @default(false)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  rfq      RFQ          @relation(fields: [rfqId], references: [id])
+  supplier Supplier     @relation(fields: [supplierId], references: [id])
+  items    RFQQuoteItem[]
+
+  @@index([rfqId])
+  @@map("rfq_quotes")
+}
+
+model RFQQuoteItem {
+  id          String  @id @default(uuid())
+  rfqQuoteId  String
+  rfqItemId   String
+  unitPrice   Float
+  quantity    Float
+  totalPrice  Float
+  notes       String? @db.Text
+
+  rfqQuote RFQQuote @relation(fields: [rfqQuoteId], references: [id], onDelete: Cascade)
+  rfqItem  RFQItem  @relation(fields: [rfqItemId], references: [id])
+
+  @@map("rfq_quote_items")
+}
+
+model PurchaseOrder {
+  id              String    @id @default(uuid())
+  poNumber        String    @unique
+  supplierId      String
+  rfqId           String?
+  projectId       String?
+  status          POStatus  @default(DRAFT)
+  orderDate       DateTime  @default(now())
+  expectedDate    DateTime?
+  deliveryAddress String?   @db.Text
+  totalAmount     Float     @default(0)
+  taxAmount       Float     @default(0)
+  discountAmount  Float     @default(0)
+  currency        String    @default("PHP")
+  paymentTerms    String?
+  notes           String?   @db.Text
+  attachmentUrl   String?
+  approvedById    String?
+  approvedAt      DateTime?
+  receivedAt      DateTime?
+  closedAt        DateTime?
+  createdById     String
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  supplier    Supplier       @relation(fields: [supplierId], references: [id])
+  rfq         RFQ?           @relation(fields: [rfqId], references: [id])
+  project     Project?       @relation(fields: [projectId], references: [id])
+  createdBy   User           @relation("POCreatedBy", fields: [createdById], references: [id])
+  approvedBy  User?          @relation("POApprovedBy", fields: [approvedById], references: [id])
+  items       POItem[]
+  receivings  POReceiving[]
+
+  @@index([poNumber])
+  @@index([status])
+  @@index([supplierId])
+  @@map("purchase_orders")
+}
+
+model POItem {
+  id              String  @id @default(uuid())
+  purchaseOrderId String
+  inventoryItemId String?
+  description     String
+  quantity        Float
+  unitPrice       Float
+  totalPrice      Float
+  unit            String
+  receivedQty     Float   @default(0)
+  taxRate         Float   @default(0)
+  notes           String? @db.Text
+
+  purchaseOrder PurchaseOrder  @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  inventoryItem InventoryItem? @relation(fields: [inventoryItemId], references: [id])
+  receivingItems POReceivingItem[]
+
+  @@index([purchaseOrderId])
+  @@map("po_items")
+}
+
+model POReceiving {
+  id              String            @id @default(uuid())
+  purchaseOrderId String
+  receiptNumber   String            @unique
+  receivedDate    DateTime          @default(now())
+  receivedById    String
+  status          POReceivingStatus @default(PENDING)
+  notes           String?           @db.Text
+  attachmentUrl   String?
+  createdAt       DateTime          @default(now())
+
+  purchaseOrder PurchaseOrder     @relation(fields: [purchaseOrderId], references: [id])
+  items         POReceivingItem[]
+  batches       InventoryBatch[]
+
+  @@index([purchaseOrderId])
+  @@map("po_receivings")
+}
+
+model POReceivingItem {
+  id              String  @id @default(uuid())
+  poReceivingId   String
+  poItemId        String
+  receivedQty     Float
+  acceptedQty     Float
+  rejectedQty     Float   @default(0)
+  unitCost        Float
+  batchId         String?
+  notes           String? @db.Text
+
+  poReceiving   POReceiving    @relation(fields: [poReceivingId], references: [id], onDelete: Cascade)
+  poItem        POItem         @relation(fields: [poItemId], references: [id])
+  batch         InventoryBatch? @relation(fields: [batchId], references: [id])
+
+  @@map("po_receiving_items")
+}
+
+// ─────────────────────────────────────────────────────────
+// INVENTORY MODULE
+// ─────────────────────────────────────────────────────────
+
+model InventoryItem {
+  id              String            @id @default(uuid())
+  sku             String            @unique
+  name            String
+  description     String?           @db.Text
+  category        InventoryCategory @default(OTHER)
+  unit            String
+  reorderPoint    Float             @default(0)
+  reorderQty      Float             @default(0)
+  currentStock    Float             @default(0)
+  reservedStock   Float             @default(0)
+  averageCost     Float             @default(0)
+  location        String?
+  imageUrl        String?
+  isActive        Boolean           @default(true)
+  isSerialized    Boolean           @default(false)
+  expiryTracked   Boolean           @default(false)
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  batches         InventoryBatch[]
+  stockMovements  StockMovement[]
+  rfqItems        RFQItem[]
+  poItems         POItem[]
+  assets          Asset[]
+
+  @@index([sku])
+  @@index([category])
+  @@index([currentStock])
+  @@map("inventory_items")
+}
+
+model InventoryBatch {
+  id              String      @id @default(uuid())
+  batchNumber     String      @unique
+  inventoryItemId String
+  quantity        Float
+  remainingQty    Float
+  unitCost        Float
+  totalCost       Float
+  status          BatchStatus @default(ACTIVE)
+  expiryDate      DateTime?
+  manufactureDate DateTime?
+  receivingId     String?
+  projectId       String?
+  supplierLot     String?
+  notes           String?     @db.Text
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  inventoryItem   InventoryItem     @relation(fields: [inventoryItemId], references: [id])
+  receiving       POReceiving?      @relation(fields: [receivingId], references: [id])
+  project         Project?          @relation(fields: [projectId], references: [id])
+  stockMovements  StockMovement[]
+  assets          Asset[]
+  receivingItems  POReceivingItem[]
+
+  @@index([batchNumber])
+  @@index([inventoryItemId])
+  @@index([status])
+  @@map("inventory_batches")
+}
+
+model StockMovement {
+  id              String              @id @default(uuid())
+  inventoryItemId String
+  batchId         String?
+  movementType    StockMovementType
+  source          StockMovementSource
+  quantity        Float
+  unitCost        Float
+  totalCost       Float
+  referenceId     String?
+  referenceNumber String?
+  projectId       String?
+  workOrderId     String?
+  notes           String?             @db.Text
+  performedById   String
+  createdAt       DateTime            @default(now())
+
+  inventoryItem InventoryItem @relation(fields: [inventoryItemId], references: [id])
+  batch         InventoryBatch? @relation(fields: [batchId], references: [id])
+  project       Project?      @relation(fields: [projectId], references: [id])
+  workOrder     WorkOrder?    @relation(fields: [workOrderId], references: [id])
+  performedBy   User          @relation(fields: [performedById], references: [id])
+
+  @@index([inventoryItemId])
+  @@index([movementType])
+  @@index([createdAt])
+  @@map("stock_movements")
+}
+
+// ─────────────────────────────────────────────────────────
+// ASSET MANAGEMENT MODULE
+// ─────────────────────────────────────────────────────────
+
+model Asset {
+  id              String         @id @default(uuid())
+  assetCode       String         @unique
+  name            String
+  description     String?        @db.Text
+  inventoryItemId String?
+  batchId         String?
+  category        String
+  location        String?
+  department      String?
+  status          AssetStatus    @default(ACTIVE)
+  condition       AssetCondition @default(GOOD)
+  purchaseDate    DateTime?
+  purchaseCost    Float?
+  currentValue    Float?
+  serialNumber    String?
+  model           String?
+  manufacturer    String?
+  warrantyExpiry  DateTime?
+  lastMaintenance DateTime?
+  nextMaintenance DateTime?
+  imageUrl        String?
+  notes           String?        @db.Text
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  inventoryItem InventoryItem? @relation(fields: [inventoryItemId], references: [id])
+  batch         InventoryBatch? @relation(fields: [batchId], references: [id])
+  assetLogs     AssetLog[]
+  workOrders    WorkOrder[]
+  maintenanceSchedules MaintenanceSchedule[]
+
+  @@index([assetCode])
+  @@index([status])
+  @@index([category])
+  @@map("assets")
+}
+
+model AssetLog {
+  id          String   @id @default(uuid())
+  assetId     String
+  action      String
+  description String?  @db.Text
+  oldStatus   String?
+  newStatus   String?
+  performedBy String?
+  createdAt   DateTime @default(now())
+
+  asset Asset @relation(fields: [assetId], references: [id])
+
+  @@index([assetId])
+  @@map("asset_logs")
+}
+
+model MaintenanceSchedule {
+  id              String    @id @default(uuid())
+  assetId         String
+  title           String
+  description     String?   @db.Text
+  frequencyDays   Int
+  lastPerformed   DateTime?
+  nextDue         DateTime
+  estimatedHours  Float?
+  assignedTo      String?
+  isActive        Boolean   @default(true)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  asset     Asset       @relation(fields: [assetId], references: [id])
+  workOrders WorkOrder[]
+
+  @@index([assetId])
+  @@index([nextDue])
+  @@map("maintenance_schedules")
+}
+
+// ─────────────────────────────────────────────────────────
+// MRO MODULE
+// ─────────────────────────────────────────────────────────
+
+model WorkOrder {
+  id                  String            @id @default(uuid())
+  woNumber            String            @unique
+  title               String
+  description         String?           @db.Text
+  type                WorkOrderType     @default(CORRECTIVE)
+  status              WorkOrderStatus   @default(DRAFT)
+  priority            WorkOrderPriority @default(MEDIUM)
+  assetId             String?
+  scheduleId          String?
+  projectId           String?
+  startDate           DateTime?
+  dueDate             DateTime?
+  completedDate       DateTime?
+  estimatedHours      Float?
+  actualHours         Float?
+  laborCost           Float             @default(0)
+  partsCost           Float             @default(0)
+  totalCost           Float             @default(0)
+  safetyNotes         String?           @db.Text
+  completionNotes     String?           @db.Text
+  attachmentUrl       String?
+  createdById         String
+  assignedToId        String?
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+
+  asset       Asset?               @relation(fields: [assetId], references: [id])
+  schedule    MaintenanceSchedule? @relation(fields: [scheduleId], references: [id])
+  project     Project?             @relation(fields: [projectId], references: [id])
+  createdBy   User                 @relation("WOCreatedBy", fields: [createdById], references: [id])
+  assignedTo  User?                @relation("WOAssignedTo", fields: [assignedToId], references: [id])
+  maintenanceLogs MaintenanceLog[]
+  partsUsed   WOPartUsage[]
+  stockMovements StockMovement[]
+
+  @@index([woNumber])
+  @@index([status])
+  @@index([assetId])
+  @@map("work_orders")
+}
+
+model MaintenanceLog {
+  id          String    @id @default(uuid())
+  workOrderId String
+  description String    @db.Text
+  hoursSpent  Float?
+  logDate     DateTime  @default(now())
+  loggedBy    String
+
+  workOrder WorkOrder @relation(fields: [workOrderId], references: [id])
+
+  @@index([workOrderId])
+  @@map("maintenance_logs")
+}
+
+model WOPartUsage {
+  id              String   @id @default(uuid())
+  workOrderId     String
+  inventoryItemId String?
+  partName        String
+  quantity        Float
+  unitCost        Float
+  totalCost       Float
+  batchId         String?
+  notes           String?  @db.Text
+  usedAt          DateTime @default(now())
+
+  workOrder WorkOrder @relation(fields: [workOrderId], references: [id])
+
+  @@index([workOrderId])
+  @@map("wo_part_usages")
+}
+
+// ─────────────────────────────────────────────────────────
+// PROJECT MODULE
+// ─────────────────────────────────────────────────────────
+
+model Project {
+  id              String        @id @default(uuid())
+  projectCode     String        @unique
+  name            String
+  description     String?       @db.Text
+  status          ProjectStatus @default(PLANNING)
+  startDate       DateTime?
+  endDate         DateTime?
+  budget          Float?
+  actualCost      Float         @default(0)
+  location        String?
+  department      String?
+  createdById     String
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  createdBy    User             @relation("ProjectCreatedBy", fields: [createdById], references: [id])
+  tasks        ProjectTask[]
+  risks        ProjectRisk[]
+  communications ProjectCommunication[]
+  rfqs         RFQ[]
+  purchaseOrders PurchaseOrder[]
+  batches      InventoryBatch[]
+  stockMovements StockMovement[]
+  workOrders   WorkOrder[]
+  materialUsages ProjectMaterial[]
+
+  @@index([projectCode])
+  @@index([status])
+  @@map("projects")
+}
+
+model ProjectTask {
+  id          String       @id @default(uuid())
+  projectId   String
+  title       String
+  description String?      @db.Text
+  status      TaskStatus   @default(TODO)
+  priority    TaskPriority @default(MEDIUM)
+  assignedTo  String?
+  dueDate     DateTime?
+  completedAt DateTime?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id])
+
+  @@index([projectId])
+  @@map("project_tasks")
+}
+
+model ProjectRisk {
+  id          String    @id @default(uuid())
+  projectId   String
+  title       String
+  description String?   @db.Text
+  level       RiskLevel @default(MEDIUM)
+  mitigation  String?   @db.Text
+  status      String    @default("OPEN")
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id])
+
+  @@map("project_risks")
+}
+
+model ProjectCommunication {
+  id          String   @id @default(uuid())
+  projectId   String
+  subject     String
+  message     String   @db.Text
+  sentBy      String
+  recipients  String?  @db.Text
+  createdAt   DateTime @default(now())
+
+  project Project @relation(fields: [projectId], references: [id])
+
+  @@map("project_communications")
+}
+
+model ProjectMaterial {
+  id              String   @id @default(uuid())
+  projectId       String
+  inventoryItemId String
+  batchId         String?
+  quantityUsed    Float
+  unitCost        Float
+  totalCost       Float
+  usedAt          DateTime @default(now())
+  notes           String?  @db.Text
+
+  project Project @relation(fields: [projectId], references: [id])
+
+  @@index([projectId])
+  @@map("project_materials")
+}
+
+// ─────────────────────────────────────────────────────────
+// NOTIFICATIONS
+// ─────────────────────────────────────────────────────────
+
+model Notification {
+  id         String           @id @default(uuid())
+  userId     String
+  title      String
+  message    String           @db.Text
+  type       NotificationType @default(INFO)
+  module     String?
+  entityId   String?
+  isRead     Boolean          @default(false)
+  readAt     DateTime?
+  createdAt  DateTime         @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([isRead])
+  @@map("notifications")
+}
+
+// ─────────────────────────────────────────────────────────
+// AUDIT LOG
+// ─────────────────────────────────────────────────────────
+
+model AuditLog {
+  id          String      @id @default(uuid())
+  userId      String?
+  userEmail   String?
+  action      AuditAction
+  module      String
+  entityId    String?
+  entityType  String?
+  oldValues   Json?
+  newValues   Json?
+  ipAddress   String?
+  userAgent   String?
+  description String?     @db.Text
+  createdAt   DateTime    @default(now())
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([module])
+  @@index([action])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
